@@ -1,5 +1,7 @@
-﻿using System.Data;
+﻿using Dapper;
+using System.Data;
 using System.Text.Json;
+using Dapper;
 using Microsoft.Data.SqlClient;
 
 namespace DataManagement.ADO;
@@ -43,23 +45,102 @@ public class AdoDemo
         //CreateTables();
         //InsertData();
         TableReader();
+        DapperDemo();
 
     }
 
     private void TableReader()
     {
-        using SqlCommand cmd = new();
-        cmd.Connection = sqlConnection;
-        cmd.CommandText = "SELECT * FROM Chart";
-        // Выполнение команд с результатом - возвращает Reader
-        SqlDataReader reader = cmd.ExecuteReader();
-        // Reader читает данные по одной строке, полная работа - в цикле
-        while (reader.Read()) // Read - и читает и проверяет наличие данных
+        using (SqlCommand cmd = new())
         {
-            Console.WriteLine("Id - {0}, User - {1}, Content: {2}", 
-                reader.GetString("Id"), reader["UserId"], reader["Products"]);
-            // пока есть открытый DataReader нельзя открыть еще один
-            // Например, это ограничивает запросы в середине цикла по другому запросу
+            cmd.Connection = sqlConnection;
+            cmd.CommandText = "SELECT * FROM Chart";
+            // Выполнение команд с результатом - возвращает Reader
+            using SqlDataReader reader = cmd.ExecuteReader();
+            // Reader читает данные по одной строке, полная работа - в цикле
+            while (reader.Read()) // Read - и читает и проверяет наличие данных
+            {
+                Console.WriteLine("Id - {0}, User - {1}, Content: {2}",
+                    reader.GetString("Id"), reader["UserId"], reader["Products"]);
+                // пока есть открытый DataReader нельзя открыть еще один
+                // Например, это ограничивает запросы в середине цикла по другому запросу
+            }
+        }
+
+        Console.WriteLine("------------------");
+
+        // ORM
+        // "SELECT TOP 1 * FROM UserRole" => new UserRole
+        using (SqlCommand cmd2 = new())
+        {
+            cmd2.Connection = sqlConnection;
+            cmd2.CommandText = "SELECT TOP 1 * FROM UserRole";
+            using SqlDataReader reader2 = cmd2.ExecuteReader();
+            reader2.Read();
+            UserRole ur = new()
+            {
+                Id = reader2.GetString("Id"),
+                Description = reader2.GetString("Description"),
+                CanCreate = reader2.GetInt32("CanCreate"),
+                CanRead = reader2.GetInt32("CanRead"),
+                CanUpdate = reader2.GetInt32("CanUpdate"),
+                CanDelete = reader2.GetInt32("CanDelete")
+            };
+            Console.WriteLine(ur);
+        }
+    }
+
+    private void DapperDemo()
+    {
+        Console.WriteLine("---------DAPPER---------");
+        // скалярные запросы - запросы на одне значение
+        string sql = "SELECT COUNT(*) FROM UserRole";
+        var cnt = sqlConnection.ExecuteScalar(sql);
+        sql = "SELECT CURRENT_TIMESTAMP";
+        DateTime dt = sqlConnection.ExecuteScalar<DateTime>(sql);
+        Console.WriteLine($"in DB there are {cnt} roles at {dt}");
+        
+        // Одна строка данных
+        // а) результат один
+        UserRole ur = sqlConnection.QuerySingle<UserRole>("SELECT TOP 1 * FROM UserRole");
+        Console.WriteLine(ur);
+        // б) результатов несколько, но нужен только первый
+        ur = sqlConnection.QueryFirst<UserRole>("SELECT TOP 2 * FROM UserRole");
+        Console.WriteLine(ur);
+        // в) с потенциальной возможностью отстутствия данных
+        var urn = sqlConnection.QueryFirstOrDefault<UserRole>("SELECT * FROM UserRole WHERE Id = 'undefined'");
+        Console.WriteLine(urn?.ToString() ?? "No data");
+        
+        // Несколько строк данных
+        var roles = sqlConnection.Query<UserRole>("SELECT * FROM UserRole");
+        // !! сам запрос (Query) возвращает IEnumerable, что не является коллекцией, а всего лишь ее генератором. Для
+        // получения коллекции можно использовать метод .ToList(), но это может привести к задержкам и зависаниям при
+        // наличии большого количества данных
+        foreach (UserRole r in roles)
+        {
+            Console.WriteLine(r);
+        }
+        Console.WriteLine("-------------------");
+        
+        // Передача параметров в команды
+        Console.WriteLine(sqlConnection.QuerySingleOrDefault<UserRole>("SELECT * FROM UserRole WHERE Id = @RoleId",
+            new { RoleId = "moderator" }));
+        
+        Console.WriteLine("-----------------------");
+        
+        foreach (UserRole r in sqlConnection.Query<UserRole>("SELECT * FROM UserRole WHERE Id IN @RoleIds",
+                     new { RoleIds = new string[] { "moderator", "guest" } }))
+        {
+            Console.WriteLine(r);
+        }
+        
+        Console.WriteLine("----------------------");
+
+        foreach (UserRole r in sqlConnection.Query<UserRole>(
+                     "SELECT * FROM UserRole WHERE CanRead = @read AND CanUpdate = @update",
+                     new {read = 1, update = 1}))
+        {
+            Console.WriteLine(r);
         }
     }
 
