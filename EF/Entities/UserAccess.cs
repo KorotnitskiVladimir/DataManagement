@@ -8,4 +8,9 @@ public class UserAccess
     public string Login { get; set; } = null!;
     public string Salt { get; set; } = null!;
     public string Dk { get; set; } = null!;
+
+    public override string ToString()
+    {
+        return $"UserAccess: Id({Id}), UserId({UserId}), RoleId({RoleId}), Login({Login})";
+    }
 }
